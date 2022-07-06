@@ -1,17 +1,44 @@
 #!/usr/bin/env nextflow
 
+// Localisation of the output
 params.out = '.'
-
+// Bed file containing genotype
+params.bed = ''
+// Version of gencode to use for retrieving the gene id list
 params.gencode = 28
 params.genome = '38'
+// Additional parameters for VEGAS2
 params.vegas_params = ''
+// If provided, regenie isn't used to compute snp level association scores
 params.snp_association = ''
+// If provided, used by VEGAS2 as a control for LD when computing gene level association scores
 params.ld_controls = ''
+// 
 params.buffer = 0
+// Phenotype file to be used by regenie
 params.phenotype = ''
+// Covar file to be used by regenie
 params.covar = ''
+// regenie genotype block size for step 1
+params.bsize_s1 = 1000
+// regenie genotype block size for step 2
+params.bsize_s2 = 400
+// Additional parameters for regenie step 1
 params.regenie_params_s1 = ''
+// Additional parameters for regenie step 2
 params.regenie_params_s2 = ''
+// output folder
+params.output = '.'
+// subfolder for regenie indermediate files
+params.regenie_folder = 'regenie_run'
+
+// Nextflow "consume" params variables once it's used, so retrieving corresponding file for use later
+regenie_folder = file("${params.regenie_folder}") 
+output_folder = file("${params.output}")
+// Plink works with a incomplete path for bed, bim, fam but files have to be specified as input in nextflow pipelines
+bed = file("${params.bfile}.bed")
+bim = file("${bed.getParent()}/${bed.getBaseName()}.bim")
+fam = file("${bed.getParent()}/${bed.getBaseName()}.fam")
 
 //////////////////////////////////////////////
 ///            CREATE GENE LIST            ///
@@ -56,137 +83,180 @@ chromosomes = glist_chrs
 //////////////////////////////////////////////
 ///          SNP ASSOCIATION TEST          ///
 //////////////////////////////////////////////
+
+// If no snp association is provided
 if (params.snp_association == ''){
 
-  bed = file("${params.bfile}.bed")
-  bim = file("${bed.getParent()}/${bed.getBaseName()}.bim")
-  fam = file("${bed.getParent()}/${bed.getBaseName()}.fam")
+    // bed = file("${params.bed}")
+    // bed = file("${params.bfile}.bed")
+    // bim = file("${bed.getParent()}/${bed.getBaseName()}.bim")
+    // fam = file("${bed.getParent()}/${bed.getBaseName()}.fam")
 
-  if (params.covar == '') {
+    if (params.covar == '') {
 
-      process compute_association_score {
+        process compute_association_score {
 
-          input:
-              file BED from bed
-              file BIM from bim
-              file FAM from fam
-              file PHENO from params.phenotype
-              val  REGENIE_PARAMS_S1 from params.regenie_params_s1
-              val  REGENIE_PARAMS_S2 from params.regenie_params_s2
+            publishDir "${output_folder}/${regenie_folder}", overwrite: true, mode: "copy"
 
-          output:
-              file 'snp_association' into snp_association
+            input:
+                file BED from bed
+                file bim
+                file fam
+                file PHENO from file("${params.phenotype}")
+                file OUTPUT from output_folder
+                val  BSIZE_S1 from params.bsize_s1
+                val  BSIZE_S2 from params.bsize_s2
+                val  REGENIE_PARAMS_S1 from params.regenie_params_s1
+                val  REGENIE_PARAMS_S2 from params.regenie_params_s2
 
-          """
-          mkdir regenie_run
-          regenie \\
-            --step 1 \\ 
-            --bed ${BED} \\
-            --phenoFile ${PHENO} \\
-            --bt \\
-            --lowmem \\
-            --lowmem-prefix regenie_run/tmp_lowmem_regenie_s1 \\
-            --out regenie_run/regenie_output_s1 \\
-            ${REGENIE_PARAMS_S1}
+            output:
+                
+                file 'regenie_output_s2_*.regenie' into regenie_output_ch
+                file 'regenie_output_s*'
 
-          regenie \\
-            --step 2 \\
-            --bed ${BED} \\
-            --phenoFile ${PHENO} \\
-            --bt \\
-            --pred regenie_run/regenie_output_s1_pred.list \\
-            --print-pheno \\
-            --out regenie_run/regenie_output_s2 \\
-            ${REGENIE_PARAMS_S2}
-          
-          Rscript -e "library(magrittr); \\
-            readr::read_table('${REGENIE_OUTPUT_S2}') %>% \\
-            dplyr::select(ID, CHISQ) %>% \\
-            write_tsv(file = "snp_association", col_names = FALSE)"
-          """
+            """
+            regenie \\
+                --step 1 \\
+                --bed ${BED.baseName} \\
+                --phenoFile ${PHENO} \\
+                --bt \\
+                --bsize ${BSIZE_S1} \\
+                --lowmem \\
+                --lowmem-prefix tmp_lowmem_regenie_s1 \\
+                --out regenie_output_s1 \\
+                ${REGENIE_PARAMS_S1}
 
-      }
+            regenie \\
+                --step 2 \\
+                --bed ${BED.baseName} \\
+                --phenoFile ${PHENO} \\
+                --bt \\
+                --bsize ${BSIZE_S2} \\
+                --pred regenie_output_s1_pred.list \\
+                --print-pheno \\
+                --out regenie_output_s2 \\
+                ${REGENIE_PARAMS_S2}
+            """
+        }
+    } else {
+        process compute_association_score_with_covars {
 
-  } else {
+            publishDir "${output_folder}/${regenie_folder}", overwrite: true, mode: "copy"
 
-    process compute_association_score_with_covars {
+            input:
+                file BED from bed
+                file bim
+                file fam
+                file PHENO from file("${params.phenotype}")
+                file OUTPUT from output_folder
+                val  BSIZE_S1 from params.bsize_s1
+                val  BSIZE_S2 from params.bsize_s2
+                val  REGENIE_PARAMS_S1 from params.regenie_params_s1
+                val  REGENIE_PARAMS_S2 from params.regenie_params_s2
 
-        input:
-            file BED from bed
-            file BIM from bim
-            file FAM from fam
-            file PHENO from params.phenotype
-            file COVAR from params.covar
-            val  REGENIE_PARAMS_S1 from params.regenie_params_s1
-            val  REGENIE_PARAMS_S2 from params.regenie_params_s2
+            output:
+                // Flattening channel so each item can be used independently later instead of a bulk
+                file 'regenie_output_s2_*.regenie' into regenie_output_ch
+                file 'regenie_output_s*'
 
-        output:
-            file 'snp_association' into snp_association
+            """
+            regenie \\
+                --step 1 \\
+                --bed ${BED.baseName} \\
+                --phenoFile ${PHENO} \\
+                --covarFile ${COVAR} \\
+                --bt \\
+                --bsize ${BSIZE_S1} \\
+                --lowmem \\
+                --lowmem-prefix tmp_lowmem_regenie_s1 \\
+                --out regenie_output_s1 \\
+                ${REGENIE_PARAMS_S1}
 
-        """
-          mkdir regenie_run
-          regenie \\
-            --step 1 \\ 
-            --bed ${BED} \\
-            --phenoFile ${PHENO} \\
-            --covarFile ${COVAR} \\
-            --bt \\
-            --lowmem \\
-            --lowmem-prefix regenie_run/tmp_lowmem_regenie_s1 \\
-            --out regenie_run/regenie_output_s1 \\
-            ${REGENIE_PARAMS_S1}
-
-          regenie \\
-            --step 2 \\
-            --bed ${BED} \\
-            --phenoFile ${PHENO} \\
-            --covarFile ${COVAR} \\
-            --bt \\
-            --pred regenie_run/regenie_output_s1_pred.list \\
-            --print-pheno \\
-            --out regenie_run/regenie_output_s2 \\
-            ${REGENIE_PARAMS_S2}
-          
-          Rscript -e "library(magrittr); \\
-            readr::read_table('${REGENIE_OUTPUT_S2}') %>% \\
-            dplyr::select(ID, CHISQ) %>% \\
-            write_tsv(file = "snp_association", col_names = FALSE)"        
-        """
-
+            regenie \\
+                --step 2 \\
+                --bed ${BED.baseName} \\
+                --phenoFile ${PHENO} \\
+                --covarFile ${COVAR} \\
+                --bt \\
+                --bsize ${BSIZE_S2} \\
+                --pred regenie_output_s1_pred.list \\
+                --print-pheno \\
+                --out regenie_output_s2 \\
+                ${REGENIE_PARAMS_S2}
+            """
+        }
     }
-  }
+
+    // regenie_output_ch = regenie_output_ch.dump(tag:'REFGENIE OUTPUT')
+    // Flattening channel so each item can be used independently instead of a bulk
+    // regenie_output_ch = regenie_output_ch.flatten()
+
+    process format_association_score {
+
+    publishDir "${output_folder}", overwrite: true, mode: "copy"
+
+    input :
+        file REGENIE_PHENO from regenie_output_ch.flatten()
+    
+    output :
+        file "snp_association_*" into snp_asso_ch
+
+    """
+    # Getting phenotype name
+    IN=${REGENIE_PHENO}
+    SUFFIX=\${IN##*regenie_output_s2_}
+    PHENO=\${SUFFIX%*.regenie}
+    
+    # Running formatting
+    Rscript -e "library(magrittr); \\
+            readr::read_table('${REGENIE_PHENO}') %>% \\
+            dplyr::select(ID, CHISQ) %>% \\
+            readr::write_tsv(file = 'snp_association_\$PHENO', col_names = FALSE)"
+    """
+    
+    }
 } else {
-
-  snp_association = file(params.snp_association)
-
+    snp_association = file(params.snp_association)
 }
 
 //////////////////////////////////////////////
 ///         EXTRACT CONTROLS FOR LD        ///
 //////////////////////////////////////////////
 if (params.ld_controls == '') {
-  process extract_controls {
+process extract_controls {
 
-      input:
-          file BED from bed
+    input:
+        file BED from bed
+        // file BFILE from bfile_base
+        // file BED from bed
+        file bim
+        file fam
 
-      output:
-          file 'plink.bed' into bed_controls
-          file 'plink.bim' into bim_controls
-          file 'plink.fam' into fam_controls
+    output:
+        file 'plink.bed' into bed_controls
+        file 'plink.bim' into bim_controls
+        file 'plink.fam' into fam_controls
 
-      """
-      plink --bfile ${BED.baseName} --filter-controls --make-bed
-      """
-      // --filter-controls : given case/control data, causes only controls to be included in the current analysis
-      // --make-bed        : creates a new PLINK 1 binary fileset, after applying sample/variant filters and other operations 
+    """
+    plink --bfile ${BED.baseName} --filter-controls --make-bed
+    """
 
-  }
+    // """
+    // plink --bfile ${BFILE} --filter-controls --make-bed
+    // """
+
+    // """
+    // plink --bfile ${BED} --filter-controls --make-bed
+    // """
+    // --filter-controls : given case/control data, causes only controls to be included in the current analysis
+    // --make-bed        : creates a new PLINK 1 binary fileset, after applying sample/variant filters and other operations 
+
+}
 } else {
 
-  bed_controls = file("${params.ld_controls}.bed")
-  bim_controls = file("${bed_controls.getParent()}/${bed_controls.getBaseName()}.bim")
-  fam_controls = file("${bed_controls.getParent()}/${bed_controls.getBaseName()}.fam")
+bed_controls = file("${params.ld_controls}")
+bim_controls = file("${bed_controls.getParent()}/${bed_controls.getBaseName()}.bim")
+fam_controls = file("${bed_controls.getParent()}/${bed_controls.getBaseName()}.fam")
 
 }
 
@@ -199,7 +269,9 @@ process vegas {
 
     input:
         file BED from bed_controls
-        file SNPASSOCIATION from snp_association
+        file bim_controls
+        file fam_controls
+        file SNPASSOCIATION from params.snp_association
         file GLIST from glist_vegas
         val VEGAS_PARAMS from params.vegas_params
         each CHR from chromosomes
