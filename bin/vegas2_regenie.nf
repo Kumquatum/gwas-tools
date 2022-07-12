@@ -33,7 +33,7 @@ params.output = '.'
 params.regenie_folder = 'regenie_run'
 
 // Nextflow "consume" params variables once it's used, so retrieving corresponding file for use later
-regenie_folder = file("${params.regenie_folder}") 
+regenie_folder = "${params.regenie_folder}"
 output_folder = file("${params.output}")
 // Plink works with a incomplete path for bed, bim, fam but files have to be specified as input in nextflow pipelines
 bed = file("${params.bfile}.bed")
