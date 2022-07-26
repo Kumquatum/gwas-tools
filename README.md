@@ -112,7 +112,10 @@ lean.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-doc
 ```
 - Sigmod: 
 ```
-sigmod.nf --sigmod SigMod_v2 --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-docker <name_of_your_image>
+# With docker
+sigmod.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-docker <name_of_your_image>
+# Without docker
+sigmod.nf --sigmod <path_to_your_SigMod_v2_folder> --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2
 ```
 
 #### SNP based methods
