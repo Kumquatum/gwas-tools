@@ -1,10 +1,18 @@
 #!/usr/bin/env nextflow
 
 params.out = "."
+params.hotnet2_path = null
 
 tab2 = file(params.tab2)
 vegas = file(params.scores)
-hotnet2_path = file(params.hotnet2_path)
+
+// conditional hotnet2 input to handle Docker or Dockerless execution
+docker_hotnet2 = '/gwas-tools/hotnet2'
+if (params.hotnet2_path != null) {
+    HOTNET2 = file(params.hotnet2_path)
+} else {
+    HOTNET2 = docker_hotnet2
+}
 
 network_permutations = 100
 heat_permutations = 1000
@@ -83,7 +91,11 @@ process vegas2hotnet {
 process make_h5_network {
 
     input:
-        file HOTNET2 from hotnet2_path
+        if (params.hotnet2_path != null) {
+            file HOTNET2
+        } else {
+            val HOTNET2
+        }
         file NODE_IDX from node_index
         file EDGE_LIST from edge_list
         val BETA from beta
@@ -109,7 +121,11 @@ process make_h5_network {
 process make_heat_data {
 
     input:
-        file HOTNET2 from hotnet2_path
+        if (params.hotnet2_path != null) {
+            file HOTNET2
+        } else {
+            val HOTNET2
+        }
         file SCORES from scores
 
     output:
@@ -128,7 +144,11 @@ scores \
 process hotnet2 {
 
     input:
-        file HOTNET2 from hotnet2_path
+        if (params.hotnet2_path != null) {
+            file HOTNET2
+        } else {
+            val HOTNET2
+        }
         file HEAT from heat
         file NETWORK from h5
         file PERMS from permutations
