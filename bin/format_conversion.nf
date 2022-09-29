@@ -6,6 +6,7 @@ params.conversion_type = ""
 
 // Optional args
 params.out = "."
+params.additional_file = ""
 
 // 
 conv_type = params.conversion_type
@@ -65,6 +66,53 @@ if (params.conversion_type == "bed2gen") {
         
         script:
             template 'io/fam2phenotype.sh'
+    }
+} else if (params.conversion_type == "vegas2hgnc" | params.conversion_type == "vegas2ensembl") {
+
+    vegas = file("${params.file_to_convert}")
+    ref = file("${params.additional_file}")
+    // Keeping only the id reference format. Either 'hgnc' or 'ensembl'
+    converter = params.conversion_type.replaceFirst(/vegas2/, "")
+
+    process vegas2other_gene_ref {
+        echo true
+        publishDir "$params.out", overwrite: true, mode: "copy"
+
+        input:
+            file VEGAS from vegas
+            file REF from ref
+            val CONV_TO from converter 
+        
+        output:
+            file '*.txt'
+        
+        script:
+        // Retrieving the id reference format in the file before conversion by
+        // oppposition to the one provided with CONV_TO
+        CONV_FROM = CONV_TO == "hgnc" ? "ensembl" : "hgnc"
+            """
+            #!/usr/bin/env Rscript
+            library(magrittr)
+
+            vegas <- readr::read_table("${VEGAS}")
+            ref <- readr::read_table("${REF}")
+
+            merge <- vegas %>%
+                dplyr::left_join(ref, by = c("Gene" = "${CONV_FROM}_gene_id")) %>%
+                dplyr::mutate(Gene = ${CONV_TO}_gene_id) %>%
+                dplyr::select(-snp, -${CONV_TO}_gene_id)
+
+            if (any(is.na(merge\$Gene))) 
+                # Using cat instead of warning as stderr can't be outputed in stdout via `echo true` in nextflow
+                # warning("Some ${CONV_FROM} IDs didn't mached ${CONV_TO} IDs. Removing them")
+                cat("\\nSome ${CONV_FROM} IDs didn't mached ${CONV_TO} IDs. Removing them")
+
+            merge %>%
+                dplyr::distinct() %>%
+                dplyr::filter(!is.na(Gene)) %>%
+                readr::write_tsv("${VEGAS.baseName}_conv_${CONV_TO}.txt")
+            """
+            // TODO: Find out how to display the warning since `debug true` isn't working
     }
 } else {
     process no_conversion {

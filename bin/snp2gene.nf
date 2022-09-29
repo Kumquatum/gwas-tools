@@ -112,8 +112,8 @@ process ensembl2hgnc {
 	read_tsv('$snp2ensembl', col_names = FALSE) %>%
 		set_colnames(c('snp','ensembl_gene_id')) %>%
 		inner_join(ensembl2hgnc, by = 'ensembl_gene_id') %>%
-		select(snp, symbol) %>%
-		rename(gene = symbol) %>%
+		# select(snp, symbol) %>% # to keep all ids
+		rename(hgnc_gene_id = symbol) %>%
 		write_tsv('snp2hgnc.tsv')
 	"""
 

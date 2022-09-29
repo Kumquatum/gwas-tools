@@ -6,17 +6,21 @@ gwas-tools contains pipelines for common use-cases when dealing with GWAS datase
 
   
 
-- [Installation](#installation)
-  * [gwas-tools core](#gwas-tools-core)
-  * [Dependencies](#dependencies)
-    + [To run the pipelines](#to-run-the-pipelines)
-    + [Pipeline itself](#pipeline-itself)
-  * [Test files](#test-files)
-- [Functions](#functions)
-  * [Data preprocessing](#data-preprocessing)
-  * [Network-guided GWAS](#network-guided-gwas)
-    + [Gene-based methods](#gene-based-methods)
-    + [SNP based methods](#snp-based-methods)
+- [gwas-tools](#gwas-tools)
+  - [Installation](#installation)
+    - [gwas-tools core](#gwas-tools-core)
+    - [Dependencies](#dependencies)
+      - [To run the pipelines](#to-run-the-pipelines)
+      - [Pipeline itself](#pipeline-itself)
+    - [Test files](#test-files)
+  - [Functions](#functions)
+    - [Data preprocessing](#data-preprocessing)
+      - [SNP/association](#snpassociation)
+      - [SNPs id to genes id mapping](#snps-id-to-genes-id-mapping)
+    - [Network-guided GWAS](#network-guided-gwas)
+      - [Gene-based methods](#gene-based-methods)
+      - [SNP based methods](#snp-based-methods)
+  - [Troubleshooting](#troubleshooting)
 
 
 ## Installation
@@ -76,14 +80,57 @@ A partial minimal set of files is available in `test/data` to demonstrate the us
 <a name="data_preprocessing"></a>
 
 <!--- Impute a dataset: `impute --bfile test/data/example --strand_info test/data/strand_info.txt --population EUR -with-docker <name_of_your_image>`-->
-- Run VEGAS2: 
+
+#### SNP/association 
+
+- With PLINK
 ```
-vegas2.nf --bfile test/data/example --gencode 31 --genome 37 --buffer 50000 --vegas_params '-top 10' -with-docker <name_of_your_image>
+vegas2.nf \
+  --bfile test/data/example \
+  --gencode 31 \
+  --genome 37 \
+  --buffer 50000 \
+  --vegas_params '-top 10' \
+  -with-docker <name_of_your_image>
 ```
-- Map SNPs to GENCODE genes: 
+- With regenie
+<!-- TODO: finir avec les bons arguments -->
 ```
-snp2gene.nf --bim test/data/example.map --genome GRCh38 -with-docker <name_of_your_image>
+# Extraction of the phenotype from fam before use of regenie
+format_conversion.nf \
+  --file_to_convert test/data/example.fam \
+  --conversion_type "fam2phenotype" \
+  -with-docker <name_of_your_image>
+
+vegas2_regenie.nf \
+  --bfile test/data/example \
+  --phenotype examplkke.tsv \
+  --regenie_params_s1 "\-\-cc12 \-\-exclude test/data/snplist_rm.txt" \
+  --regenie_params_s2 "\-\-cc12 \-\-exclude test/data/snplist_rm.txt" \
+  --gencode 31 --genome 37 \
+  --buffer 50000 \
+  --vegas_params '-top 10' \
+  -with-docker <name_of_your_image>
 ```
+#### SNPs id to genes id mapping 
+
+Different references exists for gene id : Ensembl, HGNC (also known as gene symbol), entrez. Depending on your interaction file provided (protein protein interaction network or else), you will may have to convert your ids from one to another. This command generates a table with equivalences based on GENCODE and HGNC from the SNPs in a bim file.
+
+```
+snp2gene.nf \
+  --bim test/data/example.bim \
+  --genome GRCh38 \
+  -with-docker <name_of_your_image>
+```
+It can then be used to convert ids from one reference to another depending on the one used by your interaction file. Example with the conversion of the VEGAS pipeline output to hgnc (can also be done to ensembl with `vegas2ensembl`):
+
+```
+format_conversion.nf \
+  --file_to_convert scored_genes.vegas.txt \
+  --conversion_type vegas2hgnc \
+  --additional_file snp2hgnc.tsv 
+```
+Note : the headers of the reference file need to have the 3 columns named snp,ensembl_gene_id, hgnc_gene_id if you provide another one than the one from `snp2gene.nf` pipeline
 
 ### Network-guided GWAS
 <a name="network_gwas"></a>
@@ -96,34 +143,65 @@ Multiple algorithms were adapted and benchmarked for the detection of SNPs assoc
 
 - dmGWAS: 
 ```
-dmgwas.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-docker <name_of_your_image>
+dmgwas.nf \
+  --vegas test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2 \
+  -with-docker <name_of_your_image>
 ```
 - heinz: 
 ```
-heinz.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 --fdr 0.5 -with-docker <name_of_your_image>
+heinz.nf \
+  --vegas test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2 \
+  --fdr 0.5 \
+  -with-docker <name_of_your_image>
 ```
 - HotNet2: 
 ```
-hotnet2.nf --scores test/data/scored_genes.vegas.txt --tab2 test/data/tab2 --hotnet2_path hotnet2 --lfdr_cutoff 0.125 -with-docker <name_of_your_image>
+hotnet2.nf \
+  --scores test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2 \
+  --hotnet2_path hotnet2 \
+  --lfdr_cutoff 0.125 \
+  -with-docker <name_of_your_image>
 ```
 - LEAN: 
 ```
-lean.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-docker <name_of_your_image>
+lean.nf \
+  --vegas test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2 \
+  -with-docker <name_of_your_image>
 ```
 - Sigmod: 
 ```
 # With docker
-sigmod.nf --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2 -with-docker <name_of_your_image>
+sigmod.nf \
+  --vegas test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2 \
+  -with-docker <name_of_your_image>
 # Without docker
-sigmod.nf --sigmod <path_to_your_SigMod_v2_folder> --vegas test/data/scored_genes.vegas.txt --tab2 test/data/tab2
+sigmod.nf \
+  --sigmod <path_to_your_SigMod_v2_folder> \
+  --vegas test/data/scored_genes.vegas.txt \
+  --tab2 test/data/tab2
 ```
 
 #### SNP based methods
 
 - SConES: 
 ```
-old_scones.nf --bfile test/data/example --network gi --snp2gene test/data/snp2gene.tsv --tab2 test/data/tab2 -with-docker <name_of_your_image>
+old_scones.nf \
+  --bfile test/data/example \
+  --network gi \
+  --snp2gene test/data/snp2gene.tsv \
+  --tab2 test/data/tab2 \
+  -with-docker <name_of_your_image>
 ```
 
 
+## Troubleshooting
 
+Usual mistakes :
+* Having the wrong number of `-` for a pipeline parameter :
+  * `-`  is for nextflow parameters
+  * `--` is for pipeline parameters
